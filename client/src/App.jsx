@@ -31,6 +31,8 @@ async function api(path, o = {}) {
   return d;
 }
 const allowed = (u, ...r) => r.includes(u.role);
+const DEPARTMENTS = ["CSE", "ECE", "CSE-AIML", "EEE", "MECH", "CIVIL"];
+const YEARS = [1, 2, 3, 4];
 const localDate = () =>
   new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
@@ -440,13 +442,19 @@ function Students({ u, notify }) {
           load(1);
         }}
       >
-        <input
-          placeholder="Filter by department"
+        <select
           value={filters.department}
           onChange={(event) =>
             setFilters({ ...filters, department: event.target.value })
           }
-        />
+        >
+          <option value="">All departments</option>
+          {DEPARTMENTS.map((dept) => (
+            <option key={dept} value={dept}>
+              {dept}
+            </option>
+          ))}
+        </select>
         <select
           value={filters.year}
           onChange={(event) =>
@@ -454,9 +462,9 @@ function Students({ u, notify }) {
           }
         >
           <option value="">All years</option>
-          {[1, 2, 3, 4, 5, 6].map((year) => (
-            <option key={year} value={year}>
-              {year}
+          {YEARS.map((year) => (
+            <option key={year} value={String(year)}>
+              Year {year}
             </option>
           ))}
         </select>
@@ -547,32 +555,87 @@ const blankStudent = {
   year: "1",
 };
 function StudentFields({ fields, setFields, password = false }) {
-  const items = [
-    ["name", "Full name", "text"],
-    ["email", "Email", "email"],
-    ...(password ? [["password", "Temporary password", "password"]] : []),
-    ["studentNumber", "Student number", "text"],
-    ["department", "Department", "text"],
-    ["year", "Year", "number"],
-  ];
   return (
     <div className="form-grid">
-      {items.map(([key, label, type]) => (
-        <label key={key}>
-          {label}
+      <label>
+        Full name
+        <input
+          type="text"
+          value={fields.name || ""}
+          onChange={(event) =>
+            setFields({ ...fields, name: event.target.value })
+          }
+          required
+        />
+      </label>
+      <label>
+        Email
+        <input
+          type="email"
+          value={fields.email || ""}
+          onChange={(event) =>
+            setFields({ ...fields, email: event.target.value })
+          }
+          required
+        />
+      </label>
+      {password && (
+        <label>
+          Temporary password
           <input
-            type={type}
-            min={key === "year" ? 1 : undefined}
-            max={key === "year" ? 6 : undefined}
-            minLength={key === "password" ? 12 : undefined}
-            value={fields[key] || ""}
+            type="password"
+            minLength={12}
+            value={fields.password || ""}
             onChange={(event) =>
-              setFields({ ...fields, [key]: event.target.value })
+              setFields({ ...fields, password: event.target.value })
             }
             required
           />
         </label>
-      ))}
+      )}
+      <label>
+        Student number
+        <input
+          type="text"
+          value={fields.studentNumber || ""}
+          onChange={(event) =>
+            setFields({ ...fields, studentNumber: event.target.value })
+          }
+          required
+        />
+      </label>
+      <label>
+        Department
+        <select
+          value={fields.department || "CSE"}
+          onChange={(event) =>
+            setFields({ ...fields, department: event.target.value })
+          }
+          required
+        >
+          {DEPARTMENTS.map((dept) => (
+            <option key={dept} value={dept}>
+              {dept}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Year
+        <select
+          value={String(fields.year || "1")}
+          onChange={(event) =>
+            setFields({ ...fields, year: event.target.value })
+          }
+          required
+        >
+          {YEARS.map((year) => (
+            <option key={year} value={String(year)}>
+              Year {year}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }
@@ -728,7 +791,7 @@ function Courses({ u, notify }) {
     [f, setF] = useState({
       name: "",
       code: "",
-      department: "",
+      department: "CSE",
       description: "",
       facultyId: "",
     }),
@@ -753,7 +816,7 @@ function Courses({ u, notify }) {
     setErr("");
     try {
       await api("/courses", { method: "POST", body: JSON.stringify(f) });
-      setF({ name: "", code: "", department: "", description: "", facultyId: "" });
+      setF({ name: "", code: "", department: "CSE", description: "", facultyId: "" });
       load();
       notify("Course created successfully");
     } catch (x) {
@@ -830,21 +893,43 @@ function Courses({ u, notify }) {
           <form className="edit-card compact-form" onSubmit={add}>
             <h2>Add course</h2>
             <div className="form-grid">
-              {[
-                ["name", "Course name"],
-                ["code", "Course code"],
-                ["department", "Department"],
-                ["description", "Description (optional)"],
-              ].map((x) => (
-                <label key={x[0]}>
-                  {x[1]}
-                  <input
-                    value={f[x[0]]}
-                    onChange={(e) => setF({ ...f, [x[0]]: e.target.value })}
-                    required={x[0] !== "description"}
-                  />
-                </label>
-              ))}
+              <label>
+                Course name
+                <input
+                  value={f.name}
+                  onChange={(e) => setF({ ...f, name: e.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Course code
+                <input
+                  value={f.code}
+                  onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })}
+                  required
+                />
+              </label>
+              <label>
+                Department
+                <select
+                  value={f.department || "CSE"}
+                  onChange={(e) => setF({ ...f, department: e.target.value })}
+                  required
+                >
+                  {DEPARTMENTS.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Description (optional)
+                <input
+                  value={f.description}
+                  onChange={(e) => setF({ ...f, description: e.target.value })}
+                />
+              </label>
               <label>
                 Assigned faculty
                 <select value={f.facultyId} onChange={(e) => setF({ ...f, facultyId: e.target.value })}>
@@ -883,7 +968,7 @@ function Courses({ u, notify }) {
                   <option value="">Select a student</option>
                   {s.map((x) => (
                     <option value={x.id} key={x.id}>
-                      {x.name} — {x.studentNumber}
+                      {x.name} — {x.studentNumber} ({x.department}, Year {x.year})
                     </option>
                   ))}
                 </select>
@@ -973,23 +1058,51 @@ function Courses({ u, notify }) {
             </button>
           </div>
           <div className="form-grid">
-            {[
-              ["name", "Course name"],
-              ["code", "Course code"],
-              ["department", "Department"],
-              ["description", "Description"],
-            ].map(([key, label]) => (
-              <label key={key}>
-                {label}
-                <input
-                  value={editing[key] || ""}
-                  onChange={(event) =>
-                    setEditing({ ...editing, [key]: event.target.value })
-                  }
-                  required={key !== "description"}
-                />
-              </label>
-            ))}
+            <label>
+              Course name
+              <input
+                value={editing.name || ""}
+                onChange={(event) =>
+                  setEditing({ ...editing, name: event.target.value })
+                }
+                required
+              />
+            </label>
+            <label>
+              Course code
+              <input
+                value={editing.code || ""}
+                onChange={(event) =>
+                  setEditing({ ...editing, code: event.target.value.toUpperCase() })
+                }
+                required
+              />
+            </label>
+            <label>
+              Department
+              <select
+                value={editing.department || "CSE"}
+                onChange={(event) =>
+                  setEditing({ ...editing, department: event.target.value })
+                }
+                required
+              >
+                {DEPARTMENTS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Description
+              <input
+                value={editing.description || ""}
+                onChange={(event) =>
+                  setEditing({ ...editing, description: event.target.value })
+                }
+              />
+            </label>
             <label>
               Assigned faculty
               <select value={editing.facultyId || ""} onChange={(event) => setEditing({ ...editing, facultyId: event.target.value })}>

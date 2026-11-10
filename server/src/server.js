@@ -45,7 +45,7 @@ const studentSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, unique: true },
   studentNumber: { type: String, required: true, trim: true },
   department: { type: String, required: true, trim: true },
-  year: { type: Number, required: true, min: 1, max: 6 }
+  year: { type: Number, required: true, min: 1, max: 4 }
 }, { timestamps: true });
 studentSchema.index({ tenantId: 1, studentNumber: 1 }, { unique: true });
 studentSchema.index({ tenantId: 1, createdAt: -1, _id: -1 });
@@ -92,14 +92,14 @@ const studentCreateInput = z.object({
   password: z.string().min(12).max(128),
   studentNumber: z.string().trim().min(1).max(30),
   department: z.string().trim().min(1).max(100),
-  year: z.coerce.number().int().min(1).max(6)
+  year: z.coerce.number().int().min(1).max(4)
 }).strict();
 const studentUpdateInput = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   email: z.string().trim().email().max(254).toLowerCase().optional(),
   studentNumber: z.string().trim().min(1).max(30).optional(),
   department: z.string().trim().min(1).max(100).optional(),
-  year: z.coerce.number().int().min(1).max(6).optional()
+  year: z.coerce.number().int().min(1).max(4).optional()
 }).strict().refine((value) => Object.keys(value).length > 0, "Provide at least one field to update");
 const pageInput = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -295,7 +295,7 @@ app.get("/api/students", authenticate, async (req, res, next) => {
   try {
     const querySchema = pageInput.extend({
       department: z.string().trim().min(1).max(100).optional(),
-      year: z.coerce.number().int().min(1).max(6).optional()
+      year: z.coerce.number().int().min(1).max(4).optional()
     }).strict();
     const query = querySchema.safeParse(req.query);
     if (!query.success) return res.status(400).json({ message: "Invalid student filters or pagination" });
