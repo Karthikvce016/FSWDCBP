@@ -110,7 +110,7 @@ async function seed() {
     for (const s of studentsData) {
       const user = await User.findOneAndUpdate(
         { tenantId: tenant._id, email: s.email },
-        { $set: { name: s.name, passwordHash: await hash("StudentDemo123!"), role: "student", status: "active" } },
+        { $set: { name: s.name, passwordHash: await hash("student123"), role: "student", status: "active" } },
         { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
       );
       const student = await Student.findOneAndUpdate(

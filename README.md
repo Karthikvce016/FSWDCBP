@@ -35,7 +35,8 @@ The API listens on port 3000 by default. Vite normally uses port 5173. The clien
 
 ### Login and navigation
 
-- Sign in with a college slug, email, and password.
+- Sign in with an easy college dropdown (fetches active colleges dynamically) or manual slug, email, and password. Platform Admin can be selected directly from the dropdown.
+- Password visibility toggle (Show/Hide) to avoid mistyping.
 - Maintain a two-hour session in an HTTP-only cookie and clear it on logout.
 - Restore the current session from the backend.
 - Show navigation based on the signed-in role.
@@ -52,8 +53,9 @@ Values are queried from MongoDB. Attendance percentage is unavailable when no at
 ### Students
 
 - List students with server-side pagination.
-- Filter by department and academic year.
+- Instant filter by department (CSE, ECE, CSE-AIML, EEE, MECH, CIVIL) and academic year (1-4) on dropdown change.
 - Open a row to view a student profile.
+- College Admins and Platform Admins can reset any student's password to the default `student123` with a single click.
 - College Admins can create a student login and profile, edit the profile, and delete a student after a confirmation.
 - Students can view only their own profile through the API.
 
@@ -181,8 +183,8 @@ Open http://localhost:5173. Use localhost consistently for the frontend session.
 | Faculty | college-a | priya@college-a.example | FacultyDemo123! |
 | Faculty | college-a | rajan@college-a.example | FacultyDemo123! |
 | Faculty | college-b | anita@college-b.example | FacultyDemo123! |
-| Student | college-a | student@college-a.example | StudentDemo123! |
-| Student | college-b | student@college-b.example | StudentDemo123! |
+| Student | college-a | student@college-a.example | student123 |
+| Student | college-b | student@college-b.example | student123 |
 | Platform Admin | platform | admin@platform.example | ReviewDemo123! |
 
 These credentials are for local demonstrations only.
@@ -207,19 +209,22 @@ Routes are under /api. Except health, login, and logout, they require the sessio
 | Method and path | Purpose and access |
 | --- | --- |
 | GET /health | API/database readiness. |
+| GET /auth/colleges | List active colleges for login dropdown (public). |
 | POST /auth/login | Sign in with tenantSlug, email, password; slug platform selects Platform Admin. |
 | POST /auth/logout | Clear the session cookie. |
 | GET /auth/me | Return the public current-user record. |
 | GET /dashboard | Role-specific live dashboard data. |
 | GET /tenants?page=&limit= | Paginated college list; Platform Admin. |
-| POST /tenants | Create college and initial admin; Platform Admin. Requires name, slug, adminName, adminEmail, adminPassword. |
+| GET /tenants/:id | College details including staff, faculty, students, and courses; Platform Admin. |
+| POST /tenants | Create college and initial admin; Platform Admin. Requires name, slug, adminName, adminEmail, adminPassword (min 8 chars). |
 | GET /students?page=&limit=&department=&year= | Paginated student list; student results are self-only; other roles are tenant-scoped except Platform Admin. |
-| POST /students | Create student account/profile; College Admin. |
+| POST /students | Create student account/profile; College Admin (password min 8 chars, default student123). |
 | GET /students/:id | Read a profile; tenant-scoped, students can read only themselves. |
 | PATCH /students/:id | Edit student and linked user fields; College Admin. |
-| DELETE /students/:id | Delete student and linked user; College Admin. |
+| DELETE /students/:id | Delete student and linked user (cascades enrollments & attendance); College Admin. |
+| POST /students/:id/reset-password | Reset student password to default student123; College Admin or Platform Admin. |
 | GET /faculty | List active faculty in the current college; College Admin. |
-| POST /faculty | Create a faculty login; College Admin. Requires name, email, password (12+ characters). |
+| POST /faculty | Create a faculty login; College Admin. Requires name, email, password (8+ characters). |
 | GET /courses?search= | Course list; tenant-scoped and filtered for student/faculty roles. |
 | POST /courses | Create course; College Admin. Optionally accepts facultyId to assign a faculty member. |
 | PATCH /courses/:id | Edit course and faculty assignment; College Admin. |

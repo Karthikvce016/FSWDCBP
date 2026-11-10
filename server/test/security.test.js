@@ -239,6 +239,42 @@ test("sessions, role checks, tenant isolation, CRUD and audit logs work", async 
   testTenantId = testTenant.id;
   assert.equal(testTenant.administrator.email, `${unique}-new-admin@example.test`);
 
+  // Public college list endpoint for login dropdown
+  const collegesResp = await fetch(`${baseUrl}/auth/colleges`);
+  assert.equal(collegesResp.status, 200);
+  const collegesList = await collegesResp.json();
+  assert.ok(Array.isArray(collegesList.data));
+  assert.ok(collegesList.data.some((c) => c.slug === collegeA.slug));
+
+  // Minimum 8 character password verification
+  const min7Response = await api("/students", cookieA, {
+    method: "POST",
+    body: JSON.stringify({ name: "Min7 Student", email: `${unique}-min7@example.test`, password: "pass123", studentNumber: "TA007", department: "CSE", year: 1 })
+  });
+  assert.equal(min7Response.status, 400);
+
+  const min8Response = await api("/students", cookieA, {
+    method: "POST",
+    body: JSON.stringify({ name: "Min8 Student", email: `${unique}-min8@example.test`, password: "pass1234", studentNumber: "TA008", department: "CSE", year: 1 })
+  });
+  assert.equal(min8Response.status, 201);
+
+  // Student password reset to default "student123"
+  const resetCrossTenant = await api(`/students/${studentB.id}/reset-password`, cookieA, { method: "POST" });
+  assert.equal(resetCrossTenant.status, 404);
+  const resetForbidden = await api(`/students/${studentA.id}/reset-password`, cookieStudent, { method: "POST" });
+  assert.equal(resetForbidden.status, 403);
+
+  const resetRespA = await api(`/students/${studentA.id}/reset-password`, cookieA, { method: "POST" });
+  assert.equal(resetRespA.status, 200);
+  const studentCookieAfterReset = await login(collegeA.slug, studentUser.email, "student123");
+  assert.ok(studentCookieAfterReset);
+
+  const platformResetResp = await api(`/students/${studentB.id}/reset-password`, platformCookie, { method: "POST" });
+  assert.equal(platformResetResp.status, 200);
+  const studentBCookieAfterReset = await login(collegeB.slug, studentUserB.email, "student123");
+  assert.ok(studentBCookieAfterReset);
+
   const deletedResponse = await api(`/students/${created.id}`, cookieA, { method: "DELETE" });
   assert.equal(deletedResponse.status, 200);
   assert.equal((await api(`/students/${created.id}`, cookieA)).status, 404);

@@ -89,7 +89,7 @@ const loginInput = z.object({
 const studentCreateInput = z.object({
   name: z.string().trim().min(1).max(100),
   email: z.string().trim().email().max(254).toLowerCase(),
-  password: z.string().min(12).max(128),
+  password: z.string().min(8).max(128),
   studentNumber: z.string().trim().min(1).max(30),
   department: z.string().trim().min(1).max(100),
   year: z.coerce.number().int().min(1).max(4)
@@ -200,6 +200,13 @@ app.get("/api/health", (req, res) => {
   res.status(ready ? 200 : 503).json({ status: ready ? "ok" : "unavailable" });
 });
 
+app.get("/api/auth/colleges", async (req, res, next) => {
+  try {
+    const colleges = await Tenant.find({ status: "active" }).sort({ name: 1 }).select("name slug");
+    res.json({ data: colleges.map((c) => ({ id: c.id, name: c.name, slug: c.slug })) });
+  } catch (error) { next(error); }
+});
+
 app.post("/api/auth/login", loginLimiter, async (req, res, next) => {
   try {
     const input = loginInput.parse(req.body);
@@ -277,7 +284,7 @@ app.post("/api/tenants", authenticate, requireRole("platform_admin"), async (req
     const input = z.object({
       name: z.string().trim().min(1).max(100),
       slug: z.string().trim().min(2).max(50).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).toLowerCase(),
-      adminName: z.string().trim().min(1).max(100), adminEmail: z.string().trim().email().max(254).toLowerCase(), adminPassword: z.string().min(12).max(128)
+      adminName: z.string().trim().min(1).max(100), adminEmail: z.string().trim().email().max(254).toLowerCase(), adminPassword: z.string().min(8).max(128)
     }).strict().parse(req.body);
     tenant = await Tenant.create({ name: input.name, slug: input.slug });
     admin = await User.create({ tenantId: tenant._id, name: input.adminName, email: input.adminEmail, passwordHash: await bcrypt.hash(input.adminPassword, 12), role: "college_admin" });
@@ -410,6 +417,30 @@ app.delete("/api/students/:id", authenticate, requireRole("college_admin"), asyn
   } catch (error) { next(error); }
 });
 
+app.post("/api/students/:id/reset-password", authenticate, requireRole("platform_admin", "college_admin"), async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: "Student not found" });
+    const filter = getTenantFilter(req.auth);
+    if (filter === null) return res.status(403).json({ message: "Permission denied" });
+    filter._id = req.params.id;
+    const student = await Student.findOne(filter);
+    if (!student) return res.status(404).json({ message: "Student not found" });
+    const user = await User.findById(student.userId);
+    if (!user) return res.status(404).json({ message: "Student user account not found" });
+    user.passwordHash = await bcrypt.hash("student123", 12);
+    await user.save();
+    await AuditLog.create({
+      tenantId: student.tenantId,
+      actorId: req.auth.userId,
+      action: "student.password_reset",
+      entityType: "student",
+      entityId: student._id,
+      after: { studentNumber: student.studentNumber, resetToDefault: true }
+    }).catch(() => {});
+    res.json({ message: "Student password reset to default (student123)" });
+  } catch (error) { next(error); }
+});
+
 app.get("/api/faculty", authenticate, requireRole("college_admin"), async (req, res, next) => {
   try {
     if (!tenantRequired(req, res)) return;
@@ -422,7 +453,7 @@ app.post("/api/faculty", authenticate, requireRole("college_admin"), async (req,
   let person;
   try {
     if (!tenantRequired(req, res)) return;
-    const input = z.object({ name: z.string().trim().min(1).max(100), email: z.string().trim().email().max(254).toLowerCase(), password: z.string().min(12).max(128) }).strict().parse(req.body);
+    const input = z.object({ name: z.string().trim().min(1).max(100), email: z.string().trim().email().max(254).toLowerCase(), password: z.string().min(8).max(128) }).strict().parse(req.body);
     person = await User.create({ tenantId: req.auth.tenantId, name: input.name, email: input.email, passwordHash: await bcrypt.hash(input.password, 12), role: "faculty" });
     try {
       await AuditLog.create({ tenantId: req.auth.tenantId, actorId: req.auth.userId, action: "faculty.created", entityType: "user", entityId: person._id, after: { name: person.name, email: person.email, role: person.role } });

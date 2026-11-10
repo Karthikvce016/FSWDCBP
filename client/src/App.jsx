@@ -109,11 +109,24 @@ function Login({ setU }) {
       email: "",
       password: "",
     }),
+    [colleges, setColleges] = useState([]),
+    [manualSlug, setManualSlug] = useState(false),
+    [showPassword, setShowPassword] = useState(false),
     [err, setErr] = useState(""),
     go = useNavigate();
-  useEffect(() => { document.title = "Sign in — Student Management System"; }, []);
+
+  useEffect(() => {
+    document.title = "Sign in — Student Management System";
+    api("/auth/colleges")
+      .then((res) => {
+        if (res?.data) setColleges(res.data);
+      })
+      .catch(() => {});
+  }, []);
+
   async function submit(e) {
     e.preventDefault();
+    setErr("");
     try {
       const x = await api("/auth/login", {
         method: "POST",
@@ -125,6 +138,7 @@ function Login({ setU }) {
       setErr(x.message);
     }
   }
+
   return (
     <main className="login-page">
       <div className="brand-mark">SMS</div>
@@ -133,27 +147,91 @@ function Login({ setU }) {
       <p className="muted">Sign in to your college workspace.</p>
       <form onSubmit={submit}>
         <label>
-          College slug
-          <input
-            value={f.tenantSlug}
-            onChange={(e) => setF({ ...f, tenantSlug: e.target.value })}
-          />
+          College / Workspace
+          {!manualSlug ? (
+            <select
+              value={f.tenantSlug}
+              onChange={(e) => {
+                setF({ ...f, tenantSlug: e.target.value });
+                setErr("");
+              }}
+              required
+            >
+              <option value="">Select college or workspace…</option>
+              <option value="platform">⚡ Platform Administrator (Global Superuser)</option>
+              {colleges.length > 0 && (
+                <optgroup label="Colleges">
+                  {colleges.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.name} ({c.slug})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          ) : (
+            <input
+              placeholder="e.g. college-a or platform"
+              value={f.tenantSlug}
+              onChange={(e) => {
+                setF({ ...f, tenantSlug: e.target.value.toLowerCase() });
+                setErr("");
+              }}
+              required
+            />
+          )}
         </label>
+        <button
+          type="button"
+          className="text-button"
+          style={{ alignSelf: "flex-end", fontSize: "0.8rem", marginTop: "-0.4rem", marginBottom: "0.25rem", padding: 0 }}
+          onClick={() => setManualSlug(!manualSlug)}
+        >
+          {manualSlug ? "← Choose from college dropdown" : "Can't find your college? Type slug"}
+        </button>
         <label>
           Email
           <input
             type="email"
             value={f.email}
-            onChange={(e) => setF({ ...f, email: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, email: e.target.value });
+              setErr("");
+            }}
+            placeholder="you@college.example"
+            required
           />
         </label>
         <label>
           Password
-          <input
-            type="password"
-            value={f.password}
-            onChange={(e) => setF({ ...f, password: e.target.value })}
-          />
+          <div style={{ position: "relative" }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={f.password}
+              onChange={(e) => {
+                setF({ ...f, password: e.target.value });
+                setErr("");
+              }}
+              required
+              style={{ width: "100%", paddingRight: "4rem" }}
+            />
+            <button
+              type="button"
+              className="text-button"
+              style={{
+                position: "absolute",
+                right: "0.6rem",
+                top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: "0.75rem",
+                padding: "0.2rem 0.4rem",
+                color: "#6b7280"
+              }}
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
         </label>
         {err && <p className="error-box">{err}</p>}
         <button>Sign in</button>
@@ -421,6 +499,16 @@ function Students({ u, notify }) {
       setErr(problem.message);
     }
   }
+  async function resetStudentPassword(event, student) {
+    event.stopPropagation();
+    if (!window.confirm(`Reset password for ${student.name} to default 'student123'?`)) return;
+    try {
+      await api("/students/" + student.id + "/reset-password", { method: "POST" });
+      notify(`Password for ${student.name} reset to student123 successfully`);
+    } catch (problem) {
+      setErr(problem.message);
+    }
+  }
   return (
     <>
       <div className="page-heading">
@@ -444,9 +532,11 @@ function Students({ u, notify }) {
       >
         <select
           value={filters.department}
-          onChange={(event) =>
-            setFilters({ ...filters, department: event.target.value })
-          }
+          onChange={(event) => {
+            const next = { ...filters, department: event.target.value };
+            setFilters(next);
+            load(1, next);
+          }}
         >
           <option value="">All departments</option>
           {DEPARTMENTS.map((dept) => (
@@ -457,9 +547,11 @@ function Students({ u, notify }) {
         </select>
         <select
           value={filters.year}
-          onChange={(event) =>
-            setFilters({ ...filters, year: event.target.value })
-          }
+          onChange={(event) => {
+            const next = { ...filters, year: event.target.value };
+            setFilters(next);
+            load(1, next);
+          }}
         >
           <option value="">All years</option>
           {YEARS.map((year) => (
@@ -468,7 +560,6 @@ function Students({ u, notify }) {
             </option>
           ))}
         </select>
-        <button className="secondary-button">Apply filters</button>
         {(filters.department || filters.year) && (
           <button
             type="button"
@@ -479,7 +570,7 @@ function Students({ u, notify }) {
               load(1, blank);
             }}
           >
-            Clear
+            Clear filters
           </button>
         )}
       </form>
@@ -521,15 +612,29 @@ function Students({ u, notify }) {
                     <td>{student.studentNumber}</td>
                     <td>{student.department}</td>
                     <td>Year {student.year}</td>
-                    <td>
-                      {allowed(u, "college_admin") && (
-                        <button
-                          className="delete-button"
-                          onClick={(event) => removeStudent(event, student.id)}
-                        >
-                          Delete
-                        </button>
-                      )}
+                    <td onClick={(event) => event.stopPropagation()}>
+                      <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end" }}>
+                        {allowed(u, "college_admin", "platform_admin") && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{ minHeight: "28px", padding: "0 8px", fontSize: "11px" }}
+                            title="Reset password to student123"
+                            onClick={(event) => resetStudentPassword(event, student)}
+                          >
+                            Reset PW
+                          </button>
+                        )}
+                        {allowed(u, "college_admin") && (
+                          <button
+                            className="delete-button"
+                            style={{ minHeight: "28px", padding: "0 8px", fontSize: "11px" }}
+                            onClick={(event) => removeStudent(event, student.id)}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -549,7 +654,7 @@ function Students({ u, notify }) {
 const blankStudent = {
   name: "",
   email: "",
-  password: "StudentDemo123!",
+  password: "student123",
   studentNumber: "",
   department: "CSE",
   year: "1",
@@ -584,12 +689,13 @@ function StudentFields({ fields, setFields, password = false }) {
           Temporary password
           <input
             type="password"
-            minLength={12}
+            minLength={8}
             value={fields.password || ""}
             onChange={(event) =>
               setFields({ ...fields, password: event.target.value })
             }
             required
+            placeholder="Default: student123"
           />
         </label>
       )}
@@ -688,7 +794,9 @@ function StudentDetails({ u, notify }) {
     [fields, setFields] = useState({}),
     [err, setErr] = useState(""),
     [loading, setLoading] = useState(true),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [resetting, setResetting] = useState(false),
+    [resetMsg, setResetMsg] = useState("");
   useEffect(() => {
     api("/students/" + id)
       .then(({ data }) => {
@@ -724,6 +832,21 @@ function StudentDetails({ u, notify }) {
       setSaving(false);
     }
   }
+  async function resetStudentPassword() {
+    if (!window.confirm(`Reset ${student.name}'s password to default 'student123'?`)) return;
+    setResetting(true);
+    setErr("");
+    setResetMsg("");
+    try {
+      const res = await api("/students/" + id + "/reset-password", { method: "POST" });
+      setResetMsg(res.message || "Password reset to default (student123)");
+      notify("Password reset to student123 successfully");
+    } catch (problem) {
+      setErr(problem.message);
+    } finally {
+      setResetting(false);
+    }
+  }
   if (loading) return <p className="empty-state">Loading student profile…</p>;
   if (!student)
     return (
@@ -756,7 +879,16 @@ function StudentDetails({ u, notify }) {
             <button disabled={saving}>
               {saving ? "Saving…" : "Save changes"}
             </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={resetting}
+              onClick={resetStudentPassword}
+            >
+              {resetting ? "Resetting…" : "🔑 Reset password to student123"}
+            </button>
           </div>
+          {resetMsg && <p className="notice" style={{ marginTop: "1rem" }}>✓ {resetMsg}</p>}
         </form>
       ) : (
         <section className="profile-card">
@@ -776,6 +908,19 @@ function StudentDetails({ u, notify }) {
             <span>Year</span>
             {student.year}
           </p>
+          {allowed(u, "platform_admin") && (
+            <div style={{ marginTop: "1.25rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={resetting}
+                onClick={resetStudentPassword}
+              >
+                {resetting ? "Resetting…" : "🔑 Reset password to student123"}
+              </button>
+              {resetMsg && <p className="notice" style={{ marginTop: "0.75rem" }}>✓ {resetMsg}</p>}
+            </div>
+          )}
         </section>
       )}
     </>
@@ -984,12 +1129,27 @@ function Courses({ u, notify }) {
           <input
             placeholder="Search courses"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              if (!event.target.value) load("");
+            }}
             onKeyDown={(event) => event.key === "Enter" && load()}
           />
           <button className="secondary-button" onClick={() => load()}>
             Search
           </button>
+          {search && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setSearch("");
+                load("");
+              }}
+            >
+              Clear
+            </button>
+          )}
         </div>
         {c.length ? (
           <div className="table-wrap">
@@ -1369,21 +1529,50 @@ function Attendance({ u, notify }) {
         </div>
         {courseId &&
           (e.length ? (
-            e.map((x) => (
-              <p className="attendance-row" key={x.id}>
-                <span>{x.student.studentNumber}</span>
-                <strong>{x.student.name || "Student"}</strong>
-                <select
-                  value={status[x.student._id] || "Present"}
-                  onChange={(a) =>
-                    setStatus({ ...status, [x.student._id]: a.target.value })
-                  }
+            <>
+              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center" }}>
+                <span className="muted" style={{ fontSize: "0.85rem" }}>Quick set:</span>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ minHeight: "28px", padding: "0 8px", fontSize: "11px" }}
+                  onClick={() => {
+                    const allP = {};
+                    e.forEach((item) => { if (item.student?._id) allP[item.student._id] = "Present"; });
+                    setStatus(allP);
+                  }}
                 >
-                  <option>Present</option>
-                  <option>Absent</option>
-                </select>
-              </p>
-            ))
+                  ✓ All Present
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ minHeight: "28px", padding: "0 8px", fontSize: "11px" }}
+                  onClick={() => {
+                    const allA = {};
+                    e.forEach((item) => { if (item.student?._id) allA[item.student._id] = "Absent"; });
+                    setStatus(allA);
+                  }}
+                >
+                  ✗ All Absent
+                </button>
+              </div>
+              {e.map((x) => (
+                <p className="attendance-row" key={x.id}>
+                  <span>{x.student.studentNumber}</span>
+                  <strong>{x.student.name || "Student"}</strong>
+                  <select
+                    value={status[x.student._id] || "Present"}
+                    onChange={(a) =>
+                      setStatus({ ...status, [x.student._id]: a.target.value })
+                    }
+                  >
+                    <option>Present</option>
+                    <option>Absent</option>
+                  </select>
+                </p>
+              ))}
+            </>
           ) : (
             <p className="empty-state">No students enrolled.</p>
           ))}
@@ -1432,10 +1621,10 @@ function Faculty({ notify }) {
           </label>
           <label>
             Temporary password
-            <input type="password" value={fields.password} onChange={(event) => setFields({ ...fields, password: event.target.value })} required minLength={12} />
+            <input type="password" value={fields.password} onChange={(event) => setFields({ ...fields, password: event.target.value })} required minLength={8} />
           </label>
       </div>
-      <p className="muted">Use at least 12 characters. Faculty can sign in and record attendance for courses assigned to them.</p>
+      <p className="muted">Use at least 8 characters. Faculty can sign in and record attendance for courses assigned to them.</p>
       <button disabled={saving}>{saving ? "Creating…" : "Create faculty account"}</button>
     </form>
     <section className="table-card">
@@ -1449,6 +1638,7 @@ function CollegeDetails({ id, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -1457,6 +1647,18 @@ function CollegeDetails({ id, onBack }) {
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  async function resetStudentPw(studentId, studentName) {
+    if (!window.confirm(`Reset password for ${studentName} to default 'student123'?`)) return;
+    setErr("");
+    setActionNotice("");
+    try {
+      await api("/students/" + studentId + "/reset-password", { method: "POST" });
+      setActionNotice(`Password for ${studentName} reset to student123 successfully.`);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
 
   if (loading) return <p className="empty-state">Loading college details…</p>;
   if (err || !data)
@@ -1485,6 +1687,9 @@ function CollegeDetails({ id, onBack }) {
           ← Back to colleges
         </button>
       </div>
+
+      {actionNotice && <p className="notice" style={{ marginBottom: "16px" }}>✓ {actionNotice}</p>}
+      {err && <p className="error-box" style={{ marginBottom: "16px" }}>{err}</p>}
 
       <section className="stat-grid">
         <article className="stat-card">
@@ -1535,12 +1740,22 @@ function CollegeDetails({ id, onBack }) {
       <section className="table-card" style={{ marginBottom: "20px" }}>
         <h2>Students</h2>
         <Table
-          heads={["STUDENT", "STUDENT NO.", "DEPARTMENT", "YEAR"]}
+          heads={["STUDENT", "STUDENT NO.", "DEPARTMENT", "YEAR", "ACTIONS"]}
           rows={students.map((s) => [
             s.name,
             s.studentNumber,
             s.department,
             `Year ${s.year}`,
+            <button
+              key={s.id}
+              type="button"
+              className="secondary-button"
+              style={{ minHeight: "26px", padding: "0 8px", fontSize: "11px" }}
+              title="Reset password to student123"
+              onClick={() => resetStudentPw(s.id, s.name)}
+            >
+              Reset PW
+            </button>,
           ])}
           empty="No students registered in this college."
         />
@@ -1563,8 +1778,17 @@ function CollegeDetails({ id, onBack }) {
   );
 }
 
+function slugify(text) {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function Tenants({ u, notify }) {
   const [selectedId, setSelectedId] = useState(null),
+    [manualSlug, setManualSlug] = useState(false),
     [l, setL] = useState([]),
     [f, setF] = useState({
       name: "",
@@ -1603,6 +1827,7 @@ function Tenants({ u, notify }) {
         adminEmail: "",
         adminPassword: "",
       });
+      setManualSlug(false);
       await load(1);
       notify("College and initial administrator created successfully");
     } catch (x) {
@@ -1637,22 +1862,35 @@ function Tenants({ u, notify }) {
               {x[1]}
               <input
                 type={x[2]}
-                minLength={x[0] === "adminPassword" ? 12 : undefined}
+                minLength={x[0] === "adminPassword" ? 8 : undefined}
                 value={f[x[0]]}
-                onChange={(e) =>
-                  setF({
-                    ...f,
-                    [x[0]]:
-                      x[0] === "slug"
-                        ? e.target.value.toLowerCase()
-                        : e.target.value,
-                  })
-                }
+                onChange={(e) => {
+                  setErr("");
+                  if (x[0] === "name") {
+                    if (!manualSlug) {
+                      setF({
+                        ...f,
+                        name: e.target.value,
+                        slug: slugify(e.target.value),
+                      });
+                    } else {
+                      setF({ ...f, name: e.target.value });
+                    }
+                  } else if (x[0] === "slug") {
+                    setManualSlug(true);
+                    setF({ ...f, slug: e.target.value.toLowerCase() });
+                  } else {
+                    setF({ ...f, [x[0]]: e.target.value });
+                  }
+                }}
                 required
               />
             </label>
           ))}
         </div>
+        <p className="muted" style={{ marginTop: "0.5rem" }}>
+          Minimum 8 characters for administrator password. The slug is automatically generated from the college name.
+        </p>
         <button>Create college & administrator</button>
       </form>
       <section className="table-card">
