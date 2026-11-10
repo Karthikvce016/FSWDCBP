@@ -487,6 +487,7 @@ function Students({ u, notify }) {
               <thead>
                 <tr>
                   <th>STUDENT</th>
+                  {u.role === "platform_admin" && <th>COLLEGE</th>}
                   <th>STUDENT NO.</th>
                   <th>DEPARTMENT</th>
                   <th>YEAR</th>
@@ -503,6 +504,12 @@ function Students({ u, notify }) {
                       <strong>{student.name}</strong>
                       <small>{student.email}</small>
                     </td>
+                    {u.role === "platform_admin" && (
+                      <td>
+                        <strong>{student.college?.name || "—"}</strong>
+                        <small>{student.college?.slug}</small>
+                      </td>
+                    )}
                     <td>{student.studentNumber}</td>
                     <td>{student.department}</td>
                     <td>Year {student.year}</td>
@@ -1325,8 +1332,127 @@ function Faculty({ notify }) {
   </>;
 }
 
+function CollegeDetails({ id, onBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    api("/tenants/" + id)
+      .then((res) => setData(res.data))
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) return <p className="empty-state">Loading college details…</p>;
+  if (err || !data)
+    return (
+      <section className="table-card" style={{ padding: "20px" }}>
+        <p className="error-box">{err || "College not found"}</p>
+        <button className="secondary-button" onClick={onBack}>
+          ← Back to colleges
+        </button>
+      </section>
+    );
+
+  const { college, administrator, faculty, students, courses } = data;
+
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">COLLEGE SPECIFICS</p>
+          <h1>{college.name}</h1>
+          <p className="muted">
+            Slug: <code>{college.slug}</code> · Status: <strong>{college.status}</strong>
+          </p>
+        </div>
+        <button className="secondary-button" onClick={onBack}>
+          ← Back to colleges
+        </button>
+      </div>
+
+      <section className="stat-grid">
+        <article className="stat-card">
+          <span>Administrator</span>
+          <strong style={{ fontSize: "16px", marginTop: "4px" }}>
+            {administrator?.name || "None"}
+          </strong>
+          <small className="muted">{administrator?.email}</small>
+        </article>
+        <article className="stat-card">
+          <span>Staff / Faculty</span>
+          <strong>{faculty.length}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Enrolled students</span>
+          <strong>{students.length}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Courses</span>
+          <strong>{courses.length}</strong>
+        </article>
+      </section>
+
+      <section className="table-card" style={{ marginBottom: "20px" }}>
+        <h2>Staff & faculty directory</h2>
+        <Table
+          heads={["NAME", "ROLE", "EMAIL"]}
+          rows={[
+            ...(administrator
+              ? [
+                  [
+                    administrator.name,
+                    <span className="action-tag" key="admin">College Admin</span>,
+                    administrator.email,
+                  ],
+                ]
+              : []),
+            ...faculty.map((f) => [
+              f.name,
+              <span className="year-tag" key={f.id}>Faculty</span>,
+              f.email,
+            ]),
+          ]}
+          empty="No staff or faculty accounts recorded."
+        />
+      </section>
+
+      <section className="table-card" style={{ marginBottom: "20px" }}>
+        <h2>Students</h2>
+        <Table
+          heads={["STUDENT", "STUDENT NO.", "DEPARTMENT", "YEAR"]}
+          rows={students.map((s) => [
+            s.name,
+            s.studentNumber,
+            s.department,
+            `Year ${s.year}`,
+          ])}
+          empty="No students registered in this college."
+        />
+      </section>
+
+      <section className="table-card">
+        <h2>Courses</h2>
+        <Table
+          heads={["CODE", "COURSE", "DEPARTMENT", "ASSIGNED FACULTY"]}
+          rows={courses.map((c) => [
+            c.code,
+            c.name,
+            c.department,
+            c.facultyName || "Not assigned",
+          ])}
+          empty="No courses created in this college."
+        />
+      </section>
+    </>
+  );
+}
+
 function Tenants({ u, notify }) {
-  const [l, setL] = useState([]),
+  const [selectedId, setSelectedId] = useState(null),
+    [l, setL] = useState([]),
     [f, setF] = useState({
       name: "",
       slug: "",
@@ -1372,11 +1498,16 @@ function Tenants({ u, notify }) {
   }
   if (!allowed(u, "platform_admin"))
     return <p className="error-box">Platform administrator access required.</p>;
+
+  if (selectedId) {
+    return <CollegeDetails id={selectedId} onBack={() => setSelectedId(null)} />;
+  }
+
   return (
     <>
       <Head
         title="Colleges"
-        sub="Create a college and its initial administrator together."
+        sub="Create and inspect colleges across the platform."
       />
       {err && <p className="error-box">{err}</p>}
       <form className="edit-card" onSubmit={submit}>
@@ -1412,14 +1543,53 @@ function Tenants({ u, notify }) {
         <button>Create college & administrator</button>
       </form>
       <section className="table-card">
+        <h2>Registered colleges</h2>
         {loading ? (
           <p className="empty-state">Loading colleges…</p>
+        ) : l.length === 0 ? (
+          <p className="empty-state">No colleges found.</p>
         ) : (
-          <Table
-            heads={["College", "Slug", "Status"]}
-            rows={l.map((x) => [x.name, x.slug, x.status])}
-            empty="No colleges found."
-          />
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>COLLEGE</th>
+                  <th>SLUG</th>
+                  <th>STATUS</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {l.map((x) => (
+                  <tr
+                    key={x._id || x.id}
+                    onClick={() => setSelectedId(x._id || x.id)}
+                  >
+                    <td>
+                      <strong>{x.name}</strong>
+                    </td>
+                    <td>
+                      <code>{x.slug}</code>
+                    </td>
+                    <td>
+                      <span className="status-pill">{x.status}</span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        className="secondary-button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(x._id || x.id);
+                        }}
+                      >
+                        View specifics →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
       <Pagination page={page} pagination={pagination} onPage={load} />

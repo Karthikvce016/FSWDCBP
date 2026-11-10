@@ -137,6 +137,7 @@ function publicUser(user) {
 
 function safeStudent(student) {
   const profile = student.userId;
+  const tenant = student.tenantId?.name ? student.tenantId : null;
   return {
     id: student.id,
     studentNumber: student.studentNumber,
@@ -145,7 +146,8 @@ function safeStudent(student) {
     createdAt: student.createdAt,
     updatedAt: student.updatedAt,
     name: profile?.name,
-    email: profile?.email
+    email: profile?.email,
+    college: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.slug } : null
   };
 }
 
@@ -246,6 +248,29 @@ app.get("/api/tenants", authenticate, requireRole("platform_admin"), async (req,
   } catch (error) { next(error); }
 });
 
+app.get("/api/tenants/:id", authenticate, requireRole("platform_admin"), async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: "College not found" });
+    const tenant = await Tenant.findById(req.params.id).select("name slug status createdAt");
+    if (!tenant) return res.status(404).json({ message: "College not found" });
+    const [admin, faculty, students, courses] = await Promise.all([
+      User.findOne({ tenantId: tenant._id, role: "college_admin" }).select("name email createdAt"),
+      User.find({ tenantId: tenant._id, role: "faculty", status: "active" }).sort({ name: 1 }).select("name email createdAt"),
+      Student.find({ tenantId: tenant._id }).sort({ studentNumber: 1 }).populate("userId", "name email").populate("tenantId", "name slug"),
+      Course.find({ tenantId: tenant._id }).sort({ code: 1 }).populate("facultyId", "name")
+    ]);
+    res.json({
+      data: {
+        college: tenant,
+        administrator: admin ? { id: admin.id, name: admin.name, email: admin.email, createdAt: admin.createdAt } : null,
+        faculty: faculty.map((f) => ({ id: f.id, name: f.name, email: f.email, createdAt: f.createdAt })),
+        students: students.map(safeStudent),
+        courses: courses.map(courseView)
+      }
+    });
+  } catch (error) { next(error); }
+});
+
 app.post("/api/tenants", authenticate, requireRole("platform_admin"), async (req, res, next) => {
   let tenant; let admin;
   try {
@@ -285,7 +310,8 @@ app.get("/api/students", authenticate, async (req, res, next) => {
       .sort({ createdAt: -1, _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .populate("userId", "name email");
+      .populate("userId", "name email")
+      .populate("tenantId", "name slug");
     res.json({ data: rows.map(safeStudent), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) { next(error); }
 });
