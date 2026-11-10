@@ -31,6 +31,10 @@ async function api(path, o = {}) {
   return d;
 }
 const allowed = (u, ...r) => r.includes(u.role);
+const localDate = () =>
+  new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
 export default function App() {
   const [u, setU] = useState(null),
     [wait, setWait] = useState(true),
@@ -80,6 +84,10 @@ export default function App() {
           element={page(<Courses u={u} notify={setNotice} />)}
         />
         <Route
+          path="/faculty"
+          element={page(u && allowed(u, "college_admin") ? <Faculty notify={setNotice} /> : <Navigate to="/" />)}
+        />
+        <Route
           path="/attendance"
           element={page(<Attendance u={u} notify={setNotice} />)}
         />
@@ -95,12 +103,13 @@ export default function App() {
 }
 function Login({ setU }) {
   const [f, setF] = useState({
-      tenantSlug: "college-a",
-      email: "admin@college-a.example",
-      password: "ReviewDemo123!",
+      tenantSlug: "",
+      email: "",
+      password: "",
     }),
     [err, setErr] = useState(""),
     go = useNavigate();
+  useEffect(() => { document.title = "Sign in — Student Management System"; }, []);
   async function submit(e) {
     e.preventDefault();
     try {
@@ -169,12 +178,13 @@ function Layout({ u, logout, notice, clearNotice, children }) {
             Overview
           </NavLink>
           <NavLink to="/students">Students</NavLink>
-          {allowed(u, "college_admin", "faculty") && (
+          {allowed(u, "college_admin", "faculty", "student") && (
             <>
               <NavLink to="/courses">Courses</NavLink>
               <NavLink to="/attendance">Attendance</NavLink>
             </>
           )}
+          {allowed(u, "college_admin") && <NavLink to="/faculty">Faculty</NavLink>}
           {allowed(u, "college_admin", "platform_admin") && (
             <NavLink to="/audit">Audit log</NavLink>
           )}
@@ -227,23 +237,54 @@ function Dashboard({ u }) {
         />
         <section className="stat-grid">
           <article className="stat-card">
-            <span>Attendance</span>
+            <span>Overall attendance</span>
             <strong>
               {d.attendancePercentage == null
                 ? "—"
                 : d.attendancePercentage + "%"}
             </strong>
+            {d.totalClasses ? (
+              <span className="muted" style={{ fontSize: "11px" }}>{d.presentClasses} of {d.totalClasses} classes</span>
+            ) : null}
           </article>
           <article className="stat-card">
             <span>Enrolled courses</span>
             <strong>{d.courses.length}</strong>
           </article>
         </section>
+        <section className="quick-grid">
+          <Link className="quick-card" to="/courses">
+            My courses
+          </Link>
+          <Link className="quick-card" to="/attendance">
+            Attendance records
+          </Link>
+        </section>
+        {d.profile && (
+          <section className="profile-card student-summary">
+            <p><span>Student number</span><strong>{d.profile.studentNumber}</strong></p>
+            <p><span>Department</span><strong>{d.profile.department}</strong></p>
+            <p><span>Year</span><strong>Year {d.profile.year}</strong></p>
+          </section>
+        )}
         <section className="table-card">
+          <h2>Enrolled courses</h2>
           <Table
-            heads={["Code", "Course"]}
+            heads={["CODE", "COURSE"]}
             rows={d.courses.map((x) => [x.code, x.name])}
             empty="You are not enrolled in any courses yet."
+          />
+        </section>
+        <section className="table-card attendance-history">
+          <h2>Recent attendance</h2>
+          <Table
+            heads={["DATE", "COURSE", "STATUS"]}
+            rows={(d.attendance || []).map((item) => [
+              new Date(item.date).toLocaleDateString(),
+              `${item.course?.code || "Course"} — ${item.course?.name || ""}`,
+              item.status,
+            ])}
+            empty="Your attendance records will appear here."
           />
         </section>
       </>
@@ -287,7 +328,7 @@ function Dashboard({ u }) {
           ["Courses", d.courses],
           ["Active enrollments", d.enrollments],
           [
-            "Attendance today",
+            "Attendance rate",
             d.attendancePercentage == null ? "—" : d.attendancePercentage + "%",
           ],
         ];
@@ -593,6 +634,9 @@ function StudentDetails({ u, notify }) {
       .catch((problem) => setErr(problem.message))
       .finally(() => setLoading(false));
   }, [id]);
+  useEffect(() => {
+    if (student?.name) document.title = student.name + " — Student Management System";
+  }, [student]);
   async function save(event) {
     event.preventDefault();
     setSaving(true);
@@ -670,6 +714,7 @@ function StudentDetails({ u, notify }) {
 function Courses({ u, notify }) {
   const [c, setC] = useState([]),
     [s, setS] = useState([]),
+    [faculty, setFaculty] = useState([]),
     [enrollments, setEnrollments] = useState([]),
     [search, setSearch] = useState(""),
     [editing, setEditing] = useState(null),
@@ -678,6 +723,7 @@ function Courses({ u, notify }) {
       code: "",
       department: "",
       description: "",
+      facultyId: "",
     }),
     [en, setEn] = useState({ courseId: "", studentId: "" }),
     [err, setErr] = useState("");
@@ -693,12 +739,14 @@ function Courses({ u, notify }) {
   useEffect(() => {
     load();
     api("/students?limit=50").then((x) => setS(x.data));
+    if (allowed(u, "college_admin")) api("/faculty").then((x) => setFaculty(x.data));
   }, []);
   async function add(e) {
     e.preventDefault();
+    setErr("");
     try {
       await api("/courses", { method: "POST", body: JSON.stringify(f) });
-      setF({ name: "", code: "", department: "", description: "" });
+      setF({ name: "", code: "", department: "", description: "", facultyId: "" });
       load();
       notify("Course created successfully");
     } catch (x) {
@@ -707,6 +755,7 @@ function Courses({ u, notify }) {
   }
   async function enroll(e) {
     e.preventDefault();
+    setErr("");
     try {
       await api("/enrollments", { method: "POST", body: JSON.stringify(en) });
       load();
@@ -717,6 +766,7 @@ function Courses({ u, notify }) {
   }
   async function removeEnrollment(id) {
     if (!window.confirm("Remove this student from the course?")) return;
+    setErr("");
     try {
       await api("/enrollments/" + id, { method: "DELETE" });
       load();
@@ -727,6 +777,7 @@ function Courses({ u, notify }) {
   }
   async function updateCourse(event) {
     event.preventDefault();
+    setErr("");
     try {
       await api("/courses/" + editing.id, {
         method: "PATCH",
@@ -735,6 +786,7 @@ function Courses({ u, notify }) {
           code: editing.code,
           department: editing.department,
           description: editing.description || "",
+          facultyId: editing.facultyId || "",
         }),
       });
       setEditing(null);
@@ -753,6 +805,7 @@ function Courses({ u, notify }) {
       )
     )
       return;
+    setErr("");
     try {
       await api("/courses/" + course.id, { method: "DELETE" });
       load();
@@ -785,6 +838,13 @@ function Courses({ u, notify }) {
                   />
                 </label>
               ))}
+              <label>
+                Assigned faculty
+                <select value={f.facultyId} onChange={(e) => setF({ ...f, facultyId: e.target.value })}>
+                  <option value="">Not assigned</option>
+                  {faculty.map((person) => <option value={person.id} key={person.id}>{person.name}</option>)}
+                </select>
+              </label>
             </div>
             <button>Create course</button>
           </form>
@@ -847,6 +907,7 @@ function Courses({ u, notify }) {
                   <th>CODE</th>
                   <th>COURSE</th>
                   <th>DEPARTMENT</th>
+                  <th>FACULTY</th>
                   <th>ENROLLED</th>
                   {allowed(u, "college_admin") && <th />}
                 </tr>
@@ -862,6 +923,7 @@ function Courses({ u, notify }) {
                       )}
                     </td>
                     <td>{course.department}</td>
+                    <td>{course.facultyName || "Not assigned"}</td>
                     <td>{course.enrollmentCount}</td>
                     {allowed(u, "college_admin") && (
                       <td>
@@ -921,6 +983,13 @@ function Courses({ u, notify }) {
                 />
               </label>
             ))}
+            <label>
+              Assigned faculty
+              <select value={editing.facultyId || ""} onChange={(event) => setEditing({ ...editing, facultyId: event.target.value })}>
+                <option value="">Not assigned</option>
+                {faculty.map((person) => <option value={person.id} key={person.id}>{person.name}</option>)}
+              </select>
+            </label>
           </div>
           <div className="form-actions">
             <button>Save course</button>
@@ -970,11 +1039,124 @@ function Courses({ u, notify }) {
     </>
   );
 }
+function StudentAttendance() {
+  const [courses, setCourses] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [filterCourse, setFilterCourse] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api("/courses")
+      .then((res) => setCourses(res.data))
+      .catch((e) => setErr(e.message));
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    const query = filterCourse ? "?courseId=" + filterCourse : "";
+    api("/attendance" + query)
+      .then((res) => setRecords(res.data))
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+  }, [filterCourse]);
+
+  const total = records.length;
+  const present = records.filter((r) => r.status === "Present").length;
+  const absent = records.filter((r) => r.status === "Absent").length;
+  const percentage = total ? Math.round((present / total) * 100) : null;
+
+  return (
+    <>
+      <Head title="Attendance" sub="Your attendance history and records." />
+      {err && <p className="error-box">{err}</p>}
+      <section className="stat-grid">
+        <article className="stat-card">
+          <span>Attendance rate</span>
+          <strong>{percentage === null ? "—" : percentage + "%"}</strong>
+          {percentage !== null && percentage < 75 && (
+            <span style={{ color: "#a34843", fontSize: "11px", fontWeight: 700 }}>⚠️ Below 75% requirement</span>
+          )}
+        </article>
+        <article className="stat-card">
+          <span>Total classes</span>
+          <strong>{total}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Present</span>
+          <strong>{present}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Absent</span>
+          <strong>{absent}</strong>
+        </article>
+      </section>
+
+      <div className="filter-bar">
+        <label>
+          Filter course:
+          <select value={filterCourse} onChange={(e) => setFilterCourse(e.target.value)}>
+            <option value="">All enrolled courses</option>
+            {courses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {filterCourse && (
+          <button type="button" className="text-button" onClick={() => setFilterCourse("")}>
+            Clear
+          </button>
+        )}
+      </div>
+
+      <section className="table-card">
+        <h2>Attendance records</h2>
+        {loading ? (
+          <p className="empty-state">Loading attendance records…</p>
+        ) : records.length === 0 ? (
+          <p className="empty-state">No attendance records found.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>COURSE</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((r) => (
+                  <tr key={r._id}>
+                    <td>{new Date(r.date).toLocaleDateString()}</td>
+                    <td>
+                      <strong>{r.courseId?.code}</strong>
+                      <small>{r.courseId?.name}</small>
+                    </td>
+                    <td>
+                      <span className={r.status === "Present" ? "badge-present" : "badge-absent"}>
+                        {r.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
 function Attendance({ u, notify }) {
+  if (u.role === "student") return <StudentAttendance />;
   const [c, setC] = useState([]),
     [e, setE] = useState([]),
     [courseId, setCourse] = useState(""),
-    [date, setDate] = useState(new Date().toISOString().slice(0, 10)),
+    [date, setDate] = useState(localDate()),
     [status, setStatus] = useState({}),
     [msg, setMsg] = useState(""),
     [err, setErr] = useState("");
@@ -1009,6 +1191,8 @@ function Attendance({ u, notify }) {
       });
   }, [courseId, date]);
   async function save() {
+    setErr("");
+    setMsg("");
     try {
       await api("/attendance", {
         method: "POST",
@@ -1090,6 +1274,57 @@ function Attendance({ u, notify }) {
     </>
   );
 }
+function Faculty({ notify }) {
+  const [people, setPeople] = useState([]);
+  const [fields, setFields] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  async function load() {
+    setLoading(true);
+    try { const result = await api("/faculty"); setPeople(result.data); }
+    catch (problem) { setError(problem.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, []);
+  async function submit(event) {
+    event.preventDefault(); setSaving(true); setError("");
+    try {
+      await api("/faculty", { method: "POST", body: JSON.stringify(fields) });
+      setFields({ name: "", email: "", password: "" });
+      await load(); notify("Faculty account created successfully");
+    } catch (problem) { setError(problem.message); }
+    finally { setSaving(false); }
+  }
+  return <>
+    <Head title="Faculty" sub="Create faculty accounts and assign them to courses." />
+    {error && <p className="error-box">{error}</p>}
+    <form className="edit-card compact-form" onSubmit={submit}>
+      <h2>Add faculty member</h2>
+      <div className="form-grid">
+          <label>
+            Full name
+            <input value={fields.name} onChange={(event) => setFields({ ...fields, name: event.target.value })} required maxLength={100} />
+          </label>
+          <label>
+            Email
+            <input type="email" value={fields.email} onChange={(event) => setFields({ ...fields, email: event.target.value })} required />
+          </label>
+          <label>
+            Temporary password
+            <input type="password" value={fields.password} onChange={(event) => setFields({ ...fields, password: event.target.value })} required minLength={12} />
+          </label>
+      </div>
+      <p className="muted">Use at least 12 characters. Faculty can sign in and record attendance for courses assigned to them.</p>
+      <button disabled={saving}>{saving ? "Creating…" : "Create faculty account"}</button>
+    </form>
+    <section className="table-card">
+      <h2>Faculty directory</h2>
+      {loading ? <p className="empty-state">Loading faculty…</p> : <Table heads={["NAME", "EMAIL"]} rows={people.map((person) => [person.name, person.email])} empty="No faculty accounts yet." />}
+    </section>
+  </>;
+}
+
 function Tenants({ u, notify }) {
   const [l, setL] = useState([]),
     [f, setF] = useState({
@@ -1119,6 +1354,7 @@ function Tenants({ u, notify }) {
   }, []);
   async function submit(e) {
     e.preventDefault();
+    setErr("");
     try {
       await api("/tenants", { method: "POST", body: JSON.stringify(f) });
       setF({
@@ -1238,7 +1474,13 @@ function Audit() {
           <option value="student.created">Student created</option>
           <option value="student.updated">Student updated</option>
           <option value="student.deleted">Student deleted</option>
+          <option value="faculty.created">Faculty created</option>
           <option value="course.created">Course created</option>
+          <option value="course.updated">Course updated</option>
+          <option value="course.deleted">Course deleted</option>
+          <option value="enrollment.created">Enrollment created</option>
+          <option value="enrollment.removed">Enrollment removed</option>
+          <option value="attendance.recorded">Attendance recorded</option>
           <option value="tenant.created">College created</option>
         </select>
         <label>
@@ -1300,6 +1542,7 @@ function Activity({ data = [] }) {
   );
 }
 function Head({ title, sub }) {
+  useEffect(() => { document.title = title + " — Student Management System"; }, [title]);
   return (
     <div className="page-heading">
       <div>

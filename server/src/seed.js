@@ -22,13 +22,40 @@ const studentSchema = new mongoose.Schema({
   department: String,
   year: Number
 }, { timestamps: true });
+const courseSchema = new mongoose.Schema({
+  tenantId: mongoose.Schema.Types.ObjectId,
+  name: String,
+  code: { type: String, uppercase: true },
+  department: String,
+  description: String,
+  facultyId: { type: mongoose.Schema.Types.ObjectId, default: null }
+}, { timestamps: true });
+const enrollmentSchema = new mongoose.Schema({
+  tenantId: mongoose.Schema.Types.ObjectId,
+  studentId: mongoose.Schema.Types.ObjectId,
+  courseId: mongoose.Schema.Types.ObjectId
+}, { timestamps: true });
+const attendanceSchema = new mongoose.Schema({
+  tenantId: mongoose.Schema.Types.ObjectId,
+  studentId: mongoose.Schema.Types.ObjectId,
+  courseId: mongoose.Schema.Types.ObjectId,
+  date: Date,
+  status: String,
+  recordedBy: mongoose.Schema.Types.ObjectId
+}, { timestamps: true });
+
 const Tenant = mongoose.model("Tenant", tenantSchema);
 const User = mongoose.model("User", userSchema);
 const Student = mongoose.model("Student", studentSchema);
+const Course = mongoose.model("Course", courseSchema);
+const Enrollment = mongoose.model("Enrollment", enrollmentSchema);
+const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 async function seed() {
   if (!process.env.MONGODB_URI) throw new Error("Set MONGODB_URI in server/.env");
   await mongoose.connect(process.env.MONGODB_URI);
+
+  const hash = (pw) => bcrypt.hash(pw, 12);
 
   for (const slug of ["college-a", "college-b"]) {
     const collegeName = slug === "college-a" ? "College A" : "College B";
@@ -38,25 +65,130 @@ async function seed() {
       { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
     );
 
+    // College admin
     const adminEmail = `admin@${slug}.example`;
-    const admin = await User.findOneAndUpdate(
+    await User.findOneAndUpdate(
       { tenantId: tenant._id, email: adminEmail },
-      { $set: { name: `${collegeName} Admin`, passwordHash: await bcrypt.hash("ReviewDemo123!", 12), role: "college_admin", status: "active" } },
+      { $set: { name: `${collegeName} Admin`, passwordHash: await hash("ReviewDemo123!"), role: "college_admin", status: "active" } },
       { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
     );
 
-    const studentEmail = `student@${slug}.example`;
-    const studentUser = await User.findOneAndUpdate(
-      { tenantId: tenant._id, email: studentEmail },
-      { $set: { name: `${collegeName} Student`, passwordHash: await bcrypt.hash("StudentDemo123!", 12), role: "student", status: "active" } },
-      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
-    );
-    await Student.findOneAndUpdate(
-      { tenantId: tenant._id, studentNumber: slug === "college-a" ? "A001" : "B001" },
-      { $set: { userId: studentUser._id, department: "CSE", year: 2 } },
-      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
-    );
-    console.log(`Seeded ${collegeName}: ${admin.email}`);
+    // Faculty members
+    const facultyData = slug === "college-a"
+      ? [
+          { name: "Dr. Priya Sharma", email: "priya@college-a.example" },
+          { name: "Prof. Rajan Mehta", email: "rajan@college-a.example" }
+        ]
+      : [
+          { name: "Dr. Anita Desai", email: "anita@college-b.example" }
+        ];
+
+    const facultyUsers = [];
+    for (const fac of facultyData) {
+      const user = await User.findOneAndUpdate(
+        { tenantId: tenant._id, email: fac.email },
+        { $set: { name: fac.name, passwordHash: await hash("FacultyDemo123!"), role: "faculty", status: "active" } },
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
+      );
+      facultyUsers.push(user);
+    }
+
+    // Students
+    const studentsData = slug === "college-a"
+      ? [
+          { name: "Arjun Patel", email: "student@college-a.example", number: "A001", dept: "CSE", year: 2 },
+          { name: "Kavitha Nair", email: "kavitha@college-a.example", number: "A002", dept: "CSE", year: 2 },
+          { name: "Rahul Gupta", email: "rahul@college-a.example", number: "A003", dept: "ECE", year: 3 },
+          { name: "Meera Joshi", email: "meera@college-a.example", number: "A004", dept: "CSE", year: 1 }
+        ]
+      : [
+          { name: "Sanjay Kumar", email: "student@college-b.example", number: "B001", dept: "CSE", year: 2 },
+          { name: "Deepa Rao", email: "deepa@college-b.example", number: "B002", dept: "ECE", year: 1 }
+        ];
+
+    const studentRecords = [];
+    for (const s of studentsData) {
+      const user = await User.findOneAndUpdate(
+        { tenantId: tenant._id, email: s.email },
+        { $set: { name: s.name, passwordHash: await hash("StudentDemo123!"), role: "student", status: "active" } },
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
+      );
+      const student = await Student.findOneAndUpdate(
+        { tenantId: tenant._id, studentNumber: s.number },
+        { $set: { userId: user._id, department: s.dept, year: s.year } },
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
+      );
+      studentRecords.push(student);
+    }
+
+    // Courses
+    const coursesData = slug === "college-a"
+      ? [
+          { name: "Data Structures", code: "CS201", dept: "CSE", desc: "Arrays, linked lists, trees, and graphs.", faculty: 0 },
+          { name: "Database Systems", code: "CS301", dept: "CSE", desc: "Relational databases, SQL, and normalization.", faculty: 0 },
+          { name: "Digital Electronics", code: "EC201", dept: "ECE", desc: "Logic gates, flip-flops, and combinational circuits.", faculty: 1 },
+          { name: "Web Development", code: "CS202", dept: "CSE", desc: "HTML, CSS, JavaScript, and React basics.", faculty: 0 }
+        ]
+      : [
+          { name: "Operating Systems", code: "CS301", dept: "CSE", desc: "Process management, memory, and file systems.", faculty: 0 },
+          { name: "Signal Processing", code: "EC202", dept: "ECE", desc: "Fourier transforms and filtering.", faculty: 0 }
+        ];
+
+    const courseRecords = [];
+    for (const c of coursesData) {
+      const course = await Course.findOneAndUpdate(
+        { tenantId: tenant._id, code: c.code },
+        { $set: { name: c.name, department: c.dept, description: c.desc, facultyId: facultyUsers[c.faculty]?._id || null } },
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
+      );
+      courseRecords.push(course);
+    }
+
+    // Enrollments — enroll students in courses from their department
+    for (const student of studentRecords) {
+      const deptCourses = courseRecords.filter((c) => c.department === student.department);
+      for (const course of deptCourses) {
+        await Enrollment.findOneAndUpdate(
+          { studentId: student._id, courseId: course._id },
+          { $set: { tenantId: tenant._id } },
+          { upsert: true, setDefaultsOnInsert: true }
+        );
+      }
+    }
+
+    // Seed attendance records for demonstration
+    if (slug === "college-a" && courseRecords.length && facultyUsers.length) {
+      const cs201 = courseRecords.find((c) => c.code === "CS201");
+      const cseStudents = studentRecords.filter((s) => s.department === "CSE");
+      if (cs201 && cseStudents.length) {
+        const today = new Date();
+        const d1 = new Date(today);
+        d1.setDate(today.getDate() - 2);
+        d1.setUTCHours(0, 0, 0, 0);
+
+        const d2 = new Date(today);
+        d2.setDate(today.getDate() - 1);
+        d2.setUTCHours(0, 0, 0, 0);
+
+        for (const s of cseStudents) {
+          // Day 1
+          await Attendance.findOneAndUpdate(
+            { studentId: s._id, courseId: cs201._id, date: d1 },
+            { $set: { tenantId: tenant._id, status: "Present", recordedBy: facultyUsers[0]._id } },
+            { upsert: true, setDefaultsOnInsert: true }
+          );
+          // Day 2 (Kavitha was absent on Day 2)
+          const status = s.studentNumber === "A002" ? "Absent" : "Present";
+          await Attendance.findOneAndUpdate(
+            { studentId: s._id, courseId: cs201._id, date: d2 },
+            { $set: { tenantId: tenant._id, status, recordedBy: facultyUsers[0]._id } },
+            { upsert: true, setDefaultsOnInsert: true }
+          );
+        }
+      }
+    }
+
+    console.log(`Seeded ${collegeName}: ${studentsData.length} students, ${facultyData.length} faculty, ${coursesData.length} courses`);
   }
 
   const platformAdmin = await User.findOneAndUpdate(
@@ -64,7 +196,7 @@ async function seed() {
     {
       $set: {
         name: "Platform Admin",
-        passwordHash: await bcrypt.hash("ReviewDemo123!", 12),
+        passwordHash: await hash("ReviewDemo123!"),
         role: "platform_admin",
         status: "active"
       }
