@@ -2,6 +2,13 @@
 
 CampusDesk is a local coursework prototype for managing student records across multiple colleges. It uses one React/Vite frontend, an Express API, and MongoDB. The backend scopes records using the signed-in user's role and college membership.
 
+> [!IMPORTANT]
+> ### ⚡ Platform Administrator Login (Superuser)
+> - **College / Workspace**: Select `⚡ Platform Administrator (Global Superuser)` *(slug: `platform`)*
+> - **Email**: `admin@platform.example`
+> - **Password**: `ReviewDemo123!`
+> - **Frontend URL**: [http://localhost:5173](http://localhost:5173)
+
 This guide describes the code as it exists today, how to run and demonstrate it, and what remains incomplete. This is not a production-ready student information system.
 
 ## Contents
