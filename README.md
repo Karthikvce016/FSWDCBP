@@ -178,11 +178,16 @@ Open http://localhost:5173. Use localhost consistently for the frontend session.
 
 | Role | College slug | Email | Password |
 | --- | --- | --- | --- |
+| College Admin | vasavi | karthik@gmail.com | *(your admin password)* |
 | College Admin | college-a | admin@college-a.example | ReviewDemo123! |
 | College Admin | college-b | admin@college-b.example | ReviewDemo123! |
+| Faculty | vasavi | srinivas@vasavi.example | FacultyDemo123! |
 | Faculty | college-a | priya@college-a.example | FacultyDemo123! |
 | Faculty | college-a | rajan@college-a.example | FacultyDemo123! |
 | Faculty | college-b | anita@college-b.example | FacultyDemo123! |
+| Student | vasavi | karthik.student@vasavi.example | student123 |
+| Student | vasavi | ramcharan@vasavi.example | student123 |
+| Student | vasavi | ravi@vasavi.example | student123 |
 | Student | college-a | student@college-a.example | student123 |
 | Student | college-b | student@college-b.example | student123 |
 | Platform Admin | platform | admin@platform.example | ReviewDemo123! |

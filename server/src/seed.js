@@ -57,8 +57,8 @@ async function seed() {
 
   const hash = (pw) => bcrypt.hash(pw, 12);
 
-  for (const slug of ["college-a", "college-b"]) {
-    const collegeName = slug === "college-a" ? "College A" : "College B";
+  for (const slug of ["college-a", "college-b", "vasavi"]) {
+    const collegeName = slug === "college-a" ? "College A" : slug === "college-b" ? "College B" : "Vasavi College of Engineering";
     const tenant = await Tenant.findOneAndUpdate(
       { slug },
       { $set: { name: collegeName, status: "active" } },
@@ -66,10 +66,14 @@ async function seed() {
     );
 
     // College admin
-    const adminEmail = `admin@${slug}.example`;
+    const adminEmail = slug === "vasavi" ? "karthik@gmail.com" : `admin@${slug}.example`;
+    const adminName = slug === "vasavi" ? "Karthik" : `${collegeName} Admin`;
+    const existingAdmin = await User.findOne({ tenantId: tenant._id, email: adminEmail });
+    const adminPasswordHash = existingAdmin?.passwordHash || await hash("ReviewDemo123!");
+
     await User.findOneAndUpdate(
       { tenantId: tenant._id, email: adminEmail },
-      { $set: { name: `${collegeName} Admin`, passwordHash: await hash("ReviewDemo123!"), role: "college_admin", status: "active" } },
+      { $set: { name: adminName, passwordHash: adminPasswordHash, role: "college_admin", status: "active" } },
       { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
     );
 
@@ -79,8 +83,13 @@ async function seed() {
           { name: "Dr. Priya Sharma", email: "priya@college-a.example" },
           { name: "Prof. Rajan Mehta", email: "rajan@college-a.example" }
         ]
-      : [
+      : slug === "college-b"
+      ? [
           { name: "Dr. Anita Desai", email: "anita@college-b.example" }
+        ]
+      : [
+          { name: "Dr. K. Srinivas", email: "srinivas@vasavi.example" },
+          { name: "Prof. Swapna Rani", email: "swapna@vasavi.example" }
         ];
 
     const facultyUsers = [];
@@ -101,9 +110,17 @@ async function seed() {
           { name: "Rahul Gupta", email: "rahul@college-a.example", number: "A003", dept: "ECE", year: 3 },
           { name: "Meera Joshi", email: "meera@college-a.example", number: "A004", dept: "CSE", year: 1 }
         ]
-      : [
+      : slug === "college-b"
+      ? [
           { name: "Sanjay Kumar", email: "student@college-b.example", number: "B001", dept: "CSE", year: 2 },
           { name: "Deepa Rao", email: "deepa@college-b.example", number: "B002", dept: "ECE", year: 1 }
+        ]
+      : [
+          { name: "Karthik", email: "karthik.student@vasavi.example", number: "V001", dept: "CSE", year: 2 },
+          { name: "Ram Charan", email: "ramcharan@vasavi.example", number: "V002", dept: "CSE", year: 2 },
+          { name: "Ravi", email: "ravi@vasavi.example", number: "V003", dept: "ECE", year: 3 },
+          { name: "Ram", email: "ram@vasavi.example", number: "V004", dept: "CSE-AIML", year: 2 },
+          { name: "Charan", email: "charan@vasavi.example", number: "V005", dept: "EEE", year: 1 }
         ];
 
     const studentRecords = [];
@@ -129,9 +146,15 @@ async function seed() {
           { name: "Digital Electronics", code: "EC201", dept: "ECE", desc: "Logic gates, flip-flops, and combinational circuits.", faculty: 1 },
           { name: "Web Development", code: "CS202", dept: "CSE", desc: "HTML, CSS, JavaScript, and React basics.", faculty: 0 }
         ]
-      : [
+      : slug === "college-b"
+      ? [
           { name: "Operating Systems", code: "CS301", dept: "CSE", desc: "Process management, memory, and file systems.", faculty: 0 },
           { name: "Signal Processing", code: "EC202", dept: "ECE", desc: "Fourier transforms and filtering.", faculty: 0 }
+        ]
+      : [
+          { name: "Data Structures & Algorithms", code: "CS201", dept: "CSE", desc: "Arrays, trees, graphs, and dynamic programming.", faculty: 0 },
+          { name: "Full Stack Web Development", code: "CS202", dept: "CSE", desc: "React, Node.js, Express, and MongoDB.", faculty: 0 },
+          { name: "Digital Systems Design", code: "EC201", dept: "ECE", desc: "Digital logic, VLSI, and microcontrollers.", faculty: 1 }
         ];
 
     const courseRecords = [];
@@ -157,7 +180,7 @@ async function seed() {
     }
 
     // Seed attendance records for demonstration
-    if (slug === "college-a" && courseRecords.length && facultyUsers.length) {
+    if ((slug === "college-a" || slug === "vasavi") && courseRecords.length && facultyUsers.length) {
       const cs201 = courseRecords.find((c) => c.code === "CS201");
       const cseStudents = studentRecords.filter((s) => s.department === "CSE");
       if (cs201 && cseStudents.length) {
@@ -177,8 +200,8 @@ async function seed() {
             { $set: { tenantId: tenant._id, status: "Present", recordedBy: facultyUsers[0]._id } },
             { upsert: true, setDefaultsOnInsert: true }
           );
-          // Day 2 (Kavitha was absent on Day 2)
-          const status = s.studentNumber === "A002" ? "Absent" : "Present";
+          // Day 2
+          const status = s.studentNumber.endsWith("002") ? "Absent" : "Present";
           await Attendance.findOneAndUpdate(
             { studentId: s._id, courseId: cs201._id, date: d2 },
             { $set: { tenantId: tenant._id, status, recordedBy: facultyUsers[0]._id } },
