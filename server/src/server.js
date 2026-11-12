@@ -5,7 +5,6 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -106,14 +105,6 @@ const pageInput = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10)
 });
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  message: { message: "Too many login attempts. Try again in 15 minutes." }
-});
-
 // Unsafe browser requests must come from the configured frontend origin.
 function checkRequestOrigin(req, res, next) {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
@@ -207,7 +198,7 @@ app.get("/api/auth/colleges", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post("/api/auth/login", loginLimiter, async (req, res, next) => {
+app.post("/api/auth/login", async (req, res, next) => {
   try {
     const input = loginInput.parse(req.body);
     const tenant = input.tenantSlug === "platform"
